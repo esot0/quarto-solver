@@ -1,0 +1,4 @@
+* And or tree
+* Pruning
+* Minimax algo ?
+* Winning states OR'ed 
