@@ -42,3 +42,18 @@ five.children = [eight, six]
 t.children = [seven, five]
 
 t.leaves()
+
+class GameState():
+    pass #separate class or build into determine_next_player# every choice is a GameStat
+
+    #Piece, board, maybe playe
+
+    """
+    Tree
+    Pick piece = parent
+    children = places for children to be Pick
+    Not interested in noLose or winIfyoucan
+    prune the tree!!!!!!!!!!
+
+
+    """e
