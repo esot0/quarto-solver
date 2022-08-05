@@ -1,5 +1,6 @@
 from enum import Enum, auto
 from itertools import product
+from copy import deepcopy
 import random
 DIM = 4
 
@@ -52,11 +53,6 @@ class Tile():
 
 
 class Board():
-    # board = [[None] * DIM for i in range(DIM)]
-    # for i in range(DIM):
-    #     for j in range(DIM):
-    #         board[i][j] = Tile(i, j)
-
     def __init__(self):
         indices = []
         board = [[None] * DIM for i in range(DIM)]
@@ -95,9 +91,12 @@ class Player():
     def __init__(self):
         self.currentPiece = None
 
-    def choose_piece(self, idx, game):
+    def choose_piece(self, game):
         piece = None
         next_player = game.determine_next_player()
+
+        piece = input("Choose a piece")
+        idx = int(piece)
 
         for i in range(1,len(game.playable_pieces)+1):
             print(i, ": ", game.playable_pieces[i-1])
@@ -110,24 +109,26 @@ class Player():
             game.playable_pieces.remove(piece)
 
         next_player.currentPiece = piece
-        game.current_player = next_player
         print("CURRENT PLAYER: ", repr(self))
         print("PIECE GIVEN TO " , repr(next_player))
 
 
-    def place_piece(self,coordinate, game):
+    def place_piece(self, game):
+        coordinates_raw = input("Enter your coordinates")
+        #Assumes it's in format a,b rn
+        coordinates = (int(coordinates_raw[0]), int(coordinates_raw[2]))
         board = game.board.board
         if(self.currentPiece==None):
             print(repr(self))
             raise Exception("The player has no current piece.")
-        if(board[coordinate[0]][coordinate[1]].piece):
+        if(board[coordinates[0]][coordinates[1]].piece):
             raise Exception("There is a piece there.")
         else:
             piece = self.currentPiece
-            board[coordinate[0]][coordinate[1]].piece = piece
-            game.remove_idx(coordinate)
-            print(f"Piece {piece} has been placed at: {coordinate[0]} , {coordinate[1]}")
-
+            board[coordinates[0]][coordinates[1]].piece = piece
+            game.remove_idx(coordinates)
+            print(f"Piece {piece} has been placed at: {coordinates[0]} , {coordinates[1]}")
+            return coordinates
 
 class RandomSolver(Player):
     def __init__(self):
@@ -138,16 +139,74 @@ class RandomSolver(Player):
             next_player = game.determine_next_player()
             piece = random.choice(game.playable_pieces)
             next_player.currentPiece = piece
-            game.current_player = next_player
             print("Random player chose: ", piece)
         else:
             Exception("No more pieces.")
         #pick random piece from game.playable_pieces
     def place_piece(self, game):
         piece = self.currentPiece
-        coordinate = random.choice(game.board.playable_indices)
-        game.board.board[coordinate[0]][coordinate[1]] = piece
-        print(f"Random player placed {piece} at: {coordinate[0]} , {coordinate[1]}")
+        coordinates = random.choice(game.board.playable_indices)
+        game.board.board[coordinates[0]][coordinates[1]].piece = piece
+        print(f"Random player placed {piece} at: {coordinates[0]} , {coordinates[1]}")
+        return coordinates
+
+class AssureWin(RandomSolver):
+    def __init__(self):
+        self.currentPiece = None
+
+    def place_piece(self, game):
+        piece = self.currentPiece
+        winningPosition = False
+
+        i = 0
+        while(not winningPosition and i < len(game.board.playable_indices)):
+            coordinates = game.board.playable_indices[i]
+            #Essentially you're putting the piece down everywhere to see if it works first
+            game.board.board[coordinates[0]][coordinates[1]].piece = piece
+            if(check_win(coordinates)):
+                winningPosition = True
+            else:
+                #If it doesn't work you take it back lol
+                game.board.board[coordinates[0]][coordinates[1]].piece = None
+            i+=1
+
+        if(not winningPosition):
+        #     coordinates = random.choice(game.board.playable_indices)
+        #     game.board.board[coordinates[0]][coordinates[1]].piece = piece
+            coordinates = super().place_piece(game)
+        print(f"Assure win solver placed {piece} at: {coordinates[0]} , {coordinates[1]}")
+        return coordinates
+
+class PreventLoss(RandomSolver):
+    def __init__(self):
+        self.currentPiece = None
+
+
+    def choose_piece(self, real_game):
+        p = AssureWin()
+        game_copy = deepcopy(real_game)
+        piece_bank = real_game.playable_pieces[:]
+
+        i = 0
+        while(len(piece_bank) > 0 and i < len(real_game.playable_pieces)):
+            p.piece  = real_game.playable_pieces[i]
+            coordinate = p.place_piece(g)
+
+            if(real_game.check_win(coordinate) ):
+                piece_bank.remove(piece)
+            i+=1
+
+        piece = random.choice(piece_bank)
+        real_game.determine_next_player().piece = piece
+
+class PreventLossAssureWin(AssureWin, PreventLoss):
+    #Narrowly avoids the diamond problem because assure win and prevent loss override different functions
+    def __init__(self):
+        self.currentPiece = None
+
+
+
+
 class Game():
     """
     Class handles logic and Board-Player interactions.
@@ -183,25 +242,27 @@ class Game():
     def play_game(self):
         gameOver = False
 
-        #The "second" player chooses a piece for the first
-        piece = input("Choose a piece")
-        self.choose_piece(int(piece))
+        self.current_player.choose_piece(self)
+        self.current_player =  self.determine_next_player()
 
         while(not gameOver):
-            print(self.board)
-            coordinates = input("Enter coordinates.")
+            UHM = [False, False, False] #p1, p2, tie.
 
-            coord = (int(coordinates[0]), int(coordinates[2]))
+            coord = self.current_player.place_piece(self)
 
-            print(coord)
-            self.place_piece(coord)
-
-            if(self.check_win(coord) or self.check_tie()):
+            if(self.check_win(coord)):
                 gameOver = True
-                print("Game over")
-            piece = input("Choose a piece")
-            self.current_player.make_move()
+                if(self.current_player == self.player1):
+                    UHM[0]=True
+                elif(self.current_player == self.player2):
+                    UHM[1] = True
+            elif(self.check_tie()):
+                gameOver = True
+                UHM[2] = False
+
+            self.current_player.choose_piece(self)
             self.current_player =  self.determine_next_player()
+        return UHM
 
     def check_types(self, piece1, piece2):
         return piece1.type[0]==piece2.type[0] or piece1.type[1]==piece2.type[1] or piece1.type[2]==piece2.type[2] or piece1.type[3]==piece2.type[3]
@@ -211,13 +272,15 @@ class Game():
         y = coordinates[1]
         if(self.winnable_positions[x]):
             for i in range(1,DIM-1):
+                print("BOARD: " , type(self.board[x]))
                 current_elem = self.board[x][i].piece
                 first_elem = self.board[x][0].piece
 
-                if(current_elem.type and first_elem.type and not self.check_types(first_elem, current_elem)):
+
+                if(current_elem and first_elem and not self.check_types(first_elem, current_elem)):
                     self.winnable_positions[x] = False
                     return False
-                elif(not current_elem.type):
+                elif(not current_elem):
                     return False
             return True
         return False
@@ -232,10 +295,10 @@ class Game():
                 first_elem = self.board[0][y].piece
 
                 # print(f"CURRENT: {current_elem.type}, f{first_elem.type}")
-                if(current_elem.type and first_elem.type and not self.check_types(first_elem, current_elem)):
+                if(current_elem and first_elem and not self.check_types(first_elem, current_elem)):
                         self.winnable_positions[y+4] = False
                         return False
-                elif(not current_elem.type):
+                elif(not current_elem):
                     return False
             return True
         return False
@@ -246,10 +309,10 @@ class Game():
                 current_elem = self.board[i][i].piece
                 first_elem = self.board[0][0].piece
 
-                if(current_elem.type and first_elem.type and not self.check_types(first_elem, current_elem)):
+                if(current_elem and first_elem and not self.check_types(first_elem, current_elem)):
                         self.winnable_positions[8] = False
                         return False
-                elif(not current_elem.type):
+                elif(not current_elem):
                     return False
             return True
         return False
@@ -263,10 +326,10 @@ class Game():
                 current_elem = self.board[i][DIM-i-1].piece
                 first_elem = self.board[3][0].piece
 
-                if(current_elem.type and first_elem.type and not self.check_types(current_elem, first_elem)):
+                if(current_elem and first_elem and not self.check_types(current_elem, first_elem)):
                         self.winnable_positions[9] = False
                         return False
-                elif(not current_elem.type):
+                elif(not current_elem):
                     return False
             return True
         return False
@@ -284,15 +347,11 @@ class Game():
 # print(g.board)
 # g.play_game()
 
-g = Game(Player(), RandomSolver())
-p1 = g.player1
-p2 = g.player2
+g = Game(AssureWin(), PreventLoss())
+print(g.play_game())
 
 
-p2.choose_piece(g)
-p1.place_piece((0,0),g)
-p1.choose_piece(1,g)
-p2.place_piece(g)
+
 
 """
 Win If You Can
